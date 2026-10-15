@@ -44,6 +44,7 @@ def traduire_lot(textes):
 GLOSSAIRE = {
     "en": [(r"\btransfers?\b", "move"), (r"\bDowntown\b", "Town centre")],
     "nl": [(r"\btransfer\b", "verhuizing"), (r"\bDowntown\b", "Centrum")],
+    "it": [(r"\bprezzo minimo per un viaggio a\b", "prezzo di un trasloco a"), (r"\bun viaggio a\b", "un trasloco a"), (r"\bun trasferimento a\b", "un trasloco a")],
     "de": [(r"\s*✓\s*", " — ")],
 }
 def corriger(t):
