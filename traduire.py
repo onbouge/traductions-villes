@@ -40,14 +40,31 @@ def traduire_lot(textes):
         out = res
     return out
 
+# Faux-sens CONNUS, relevés au premier essai (15/10/2026) : « déménagement » devenait « transfer ».
+GLOSSAIRE = {
+    "en": [(r"\btransfers?\b", "move"), (r"\bDowntown\b", "Town centre")],
+    "nl": [(r"\btransfer\b", "verhuizing"), (r"\bDowntown\b", "Centrum")],
+    "de": [(r"\s*✓\s*", " — ")],
+}
+def corriger(t):
+    for motif, par in GLOSSAIRE.get(LANG, []):
+        t = re.sub(motif, par, t)
+    return t
+
 def aplatir(champs):
     """Liste des chaînes à traduire + fonction qui reconstruit la même forme."""
     textes, poses = [], []
     def ajout(v, chemin):
         if isinstance(v, str) and v.strip():
-            morceaux = decouper(v)
-            poses.append((chemin, len(textes), len(morceaux)))
-            textes.extend(morceaux)
+            # « Centre-ville parfois dense — accès camion à confirmer » : sans ce découpage le modèle
+            # avalait le tiret (« Downtown soms dichte truck… », un « ✓ » en allemand). 15/10/2026.
+            parts = re.split(r"(\s+[—–]\s+)", v)
+            plan = []
+            for p in parts:
+                if re.fullmatch(r"\s+[—–]\s+", p): plan.append(("sep", p)); continue
+                m = decouper(p) if p.strip() else []
+                plan.append(("txt", len(textes), len(m))); textes.extend(m)
+            poses.append((chemin, plan))
     for k in ("descripteurCourt", "arriveeIntro", "aquarelleAlt"):
         ajout(champs.get(k), (k,))
     for k in ("presentation", "specs"):
@@ -63,8 +80,9 @@ def aplatir(champs):
         for j, it in enumerate(c.get("items") or []): ajout(it, ("checklist", i, "items", j))
     def reconstruire(traduits):
         p = json.loads(json.dumps(champs))
-        for chemin, debut, n in poses:
-            val = " ".join(traduits[debut:debut + n]).strip()
+        for chemin, plan in poses:
+            val = "".join(x[1] if x[0] == "sep" else " ".join(traduits[x[1]:x[1] + x[2]]) for x in plan).strip()
+            val = corriger(val)
             cible = p
             for c in chemin[:-1]: cible = cible[c]
             cible[chemin[-1]] = val
