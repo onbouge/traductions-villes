@@ -1,0 +1,55 @@
+name: traduire
+# Le serveur OnBouge pousse lots/<lang>.jsonl ; chaque langue est traduite sur sa propre machine,
+# puis une Release publie resultats-<lang>.jsonl. Le serveur TÉLÉCHARGE (aucune clé du serveur ici).
+on:
+  workflow_dispatch:
+  push:
+    paths: ["lots/**"]
+concurrency: { group: traduire, cancel-in-progress: false }
+permissions: { contents: write }
+jobs:
+  traduire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix: { lang: [it, de, es, nl, en] }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rien à faire ?
+        id: lot
+        run: if [ -s "lots/${{ matrix.lang }}.jsonl" ]; then echo "a=1" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-python@v5
+        if: steps.lot.outputs.a == '1'
+        with: { python-version: "3.11" }
+      - uses: actions/cache@v4
+        if: steps.lot.outputs.a == '1'
+        with: { path: ~/.cache/huggingface, key: hf-${{ matrix.lang }}-v1 }
+      - name: Installer (CPU seulement)
+        if: steps.lot.outputs.a == '1'
+        run: |
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet "transformers<5" sentencepiece sacremoses
+      - name: Traduire
+        if: steps.lot.outputs.a == '1'
+        env: { MAX_SECONDES: "18000" }
+        run: python traduire.py ${{ matrix.lang }}
+      - uses: actions/upload-artifact@v4
+        if: steps.lot.outputs.a == '1'
+        with: { name: resultats-${{ matrix.lang }}, path: resultats/${{ matrix.lang }}.jsonl, retention-days: 7 }
+  publier:
+    needs: traduire
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: sortie, pattern: resultats-*, merge-multiple: true }
+      - name: Release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          ls sortie/*.jsonl >/dev/null 2>&1 || { echo "aucun résultat"; exit 0; }
+          cd sortie && sha256sum *.jsonl > SHA256SUMS && cd ..
+          TAG="trad-$(date -u +%Y%m%d-%H%M)"
+          gh release create "$TAG" sortie/* --repo "${{ github.repository }}" --title "$TAG" --notes "Traductions OPUS-MT (Helsinki-NLP)"
+          # ne garder que les 4 dernières
+          gh release list --repo "${{ github.repository }}" --limit 100 --json tagName -q '.[].tagName' | tail -n +5 | while read t; do gh release delete "$t" --repo "${{ github.repository }}" --yes --cleanup-tag; done
