@@ -65,6 +65,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # 26/11/2026 : un résultat VIDE (nl : 26 pages, 0 traduite) faisait refuser l envoi par GitHub (« HTTP 400 Bad
+          # Content-Length ») et TOUTE la Release tombait, chaque nuit depuis le 18/10 : 4 langues traduites perdues. On l écarte.
+          find sortie -name '*.jsonl' -empty -print -delete
           ls sortie/*.jsonl >/dev/null 2>&1 || { echo "aucun résultat"; exit 0; }
           cd sortie && sha256sum *.jsonl > SHA256SUMS && cd ..
           TAG="trad-$(date -u +%Y%m%d-%H%M)"
